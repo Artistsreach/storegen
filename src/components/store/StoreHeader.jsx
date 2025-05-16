@@ -10,8 +10,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 
-const StoreHeader = ({ store }) => {
-  const { name, theme, logoUrl, id: storeId } = store;
+const StoreHeader = ({ store, isPublishedView = false }) => {
+  const { name, theme, logo_url: logoUrl, id: storeId } = store;
   const { cart, removeFromCart, updateQuantity } = useStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -21,8 +21,10 @@ const StoreHeader = ({ store }) => {
   const cartItemCount = storeCartItems.reduce((sum, item) => sum + item.quantity, 0);
   const cartTotal = storeCartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
+  // Simplified base path, as there's only one main store URL structure now
+  const basePath = `/store/${storeId}`; 
   const navLinks = [
-    { href: `/preview/${storeId}`, label: 'Home' },
+    { href: basePath, label: 'Home' },
     { href: `#products-${storeId}`, label: 'Products' },
     { href: `#features-${storeId}`, label: 'Features' },
     { href: `#contact-${storeId}`, label: 'Contact' },
@@ -31,16 +33,16 @@ const StoreHeader = ({ store }) => {
   const handleNavLinkClick = (e, href) => {
     e.preventDefault();
     setIsMobileMenuOpen(false);
-    if (href.startsWith('/')) {
+    if (href.startsWith('/store/')) { // Only one base path now
       navigate(href);
-    } else {
+    } else { // For anchor links like #products
       const elementId = href.substring(1);
       const element = document.getElementById(elementId);
       if (element) {
         element.scrollIntoView({ behavior: 'smooth' });
       } else {
         // Fallback for sections not yet rendered or if ID is incorrect
-        navigate(`/preview/${storeId}`);
+        navigate(basePath); // Navigate to store home if anchor target not found
       }
     }
   };
@@ -61,8 +63,8 @@ const StoreHeader = ({ store }) => {
         style={{ borderColor: `${theme.primaryColor}30` }}
       >
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <Link to={`/preview/${storeId}`} className="flex items-center gap-2 group">
-            {logoUrl && <img-replace src={logoUrl} alt={`${name} logo`} className="h-8 w-8 object-contain group-hover:scale-110 transition-transform duration-200" />}
+          <Link to={basePath} className="flex items-center gap-2 group">
+            {logoUrl && <img src={logoUrl} alt={`${name} logo`} className="h-12 w-12 object-contain group-hover:scale-110 transition-transform duration-200" />}
             <span className="font-bold text-xl tracking-tight group-hover:text-primary transition-colors" style={{color: theme.primaryColor}}>{name}</span>
           </Link>
           
@@ -112,8 +114,8 @@ const StoreHeader = ({ store }) => {
             className="fixed inset-0 z-50 bg-background p-6 md:hidden"
           >
             <div className="flex justify-between items-center mb-8">
-              <Link to={`/preview/${storeId}`} className="flex items-center gap-2" onClick={() => setIsMobileMenuOpen(false)}>
-                {logoUrl && <img-replace src={logoUrl} alt={`${name} logo`} className="h-8 w-8 object-contain" />}
+              <Link to={basePath} className="flex items-center gap-2" onClick={() => setIsMobileMenuOpen(false)}>
+                {logoUrl && <img src={logoUrl} alt={`${name} logo`} className="h-12 w-12 object-contain" />}
                 <span className="font-bold text-xl" style={{color: theme.primaryColor}}>{name}</span>
               </Link>
               <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(false)}>
@@ -165,7 +167,7 @@ const StoreHeader = ({ store }) => {
                       <div className="space-y-4">
                         {storeCartItems.map(item => (
                           <div key={item.id} className="flex items-start gap-4">
-                            <img-replace 
+                            <img 
                               src={item.image?.src?.tiny || item.image?.src?.medium || `https://via.placeholder.com/80x80.png?text=${item.name.substring(0,1)}`} 
                               alt={item.name} 
                               className="w-20 h-20 object-cover rounded-md border" 

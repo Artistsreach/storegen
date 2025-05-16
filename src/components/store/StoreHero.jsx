@@ -1,17 +1,42 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, ShoppingBag } from 'lucide-react';
+import { ArrowRight, ShoppingBag, Edit2Icon } from 'lucide-react'; // Added Edit2Icon
+import ReplaceVideoModal from './ReplaceVideoModal'; // Added import
+import { useStore } from '@/contexts/StoreContext'; // Added import
 
-const StoreHero = ({ store }) => {
-  const { name, theme, heroImage, content, id: storeId } = store;
+const StoreHero = ({ store, isPublishedView = false }) => {
+  const { name, theme, heroImage, content, id: storeId, hero_video_url, hero_video_poster_url } = store;
+  const { updateStore } = useStore(); // Added useStore
+  const [isReplaceModalOpen, setIsReplaceModalOpen] = useState(false); // Added state for modal
   
   const heroTitle = content?.heroTitle || `Welcome to ${name}`;
   const heroDescription = content?.heroDescription || `Explore ${name}, your destination for amazing products.`;
   
   const imageUrl = heroImage?.src?.large || heroImage?.url || 'https://via.placeholder.com/1200x800.png?text=Store+Image';
   const imageAlt = heroImage?.alt || heroImage?.altText || `${name} hero image`;
+
+  // Use video poster as fallback for image if video exists, or hero image poster
+  const videoPoster = hero_video_poster_url || imageUrl;
+
+  const handleOpenReplaceModal = () => {
+    setIsReplaceModalOpen(true);
+  };
+
+  const handleVideoReplaced = async (newVideoUrl) => {
+    if (storeId && newVideoUrl) {
+      try {
+        // We might want to generate a new poster for the new video, or clear it.
+        // For now, let's clear it. A more advanced solution could generate a poster.
+        await updateStore(storeId, { hero_video_url: newVideoUrl, hero_video_poster_url: '' });
+        // The modal closes itself on success, so no need to setIsReplaceModalOpen(false) here
+      } catch (error) {
+        console.error("Failed to update store with new video URL:", error);
+        // Optionally, show a toast message for failure here
+      }
+    }
+  };
 
   const scrollToProducts = () => {
     const productsSection = document.getElementById(`products-${storeId}`);
@@ -83,35 +108,72 @@ const StoreHero = ({ store }) => {
               className="absolute -inset-2 rounded-xl opacity-30 group-hover:opacity-50 transition-opacity duration-300" 
               style={{ background: `linear-gradient(45deg, ${theme.primaryColor}, ${theme.secondaryColor || theme.primaryColor})`}}
             ></div>
-            <div className="aspect-video md:aspect-[5/4] rounded-xl overflow-hidden shadow-2xl relative z-10 transform group-hover:scale-105 transition-transform duration-300">
-              <img-replace
-                alt={imageAlt}
-                className="w-full h-full object-cover"
-                src={imageUrl} />
-            </div>
-            
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.8 }}
-              className="absolute -bottom-8 -left-8 bg-background/80 backdrop-blur-sm rounded-lg p-4 shadow-xl hidden md:block"
-            >
-              <div className="flex items-center gap-3">
-                <div 
-                  className="h-12 w-12 rounded-full flex items-center justify-center text-white text-2xl font-bold"
-                  style={{ backgroundColor: theme.primaryColor }}
+            <div className="aspect-video md:aspect-[5/4] rounded-xl overflow-hidden shadow-2xl relative z-10 transform group-hover:scale-105 transition-transform duration-300 bg-black"> {/* Added bg-black for video letterboxing */}
+              {!isPublishedView && hero_video_url && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="absolute top-2 right-2 z-20 bg-background/70 hover:bg-background/90 text-foreground"
+                  onClick={handleOpenReplaceModal}
+                  title="Replace Video"
                 >
-                  {name.substring(0,1).toUpperCase()}
+                  <Edit2Icon className="h-5 w-5" />
+                </Button>
+              )}
+              {hero_video_url ? (
+                <video
+                  src={hero_video_url}
+                  key={hero_video_url} // Add key to force re-render when src changes
+                  poster={videoPoster}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="w-full h-full object-cover"
+                  onError={(e) => console.error("Error playing video:", e)}
+                >
+                  Your browser does not support the video tag.
+                </video>
+              ) : (
+                <img
+                  alt={imageAlt}
+                  className="w-full h-full object-cover"
+                  src={imageUrl} 
+                />
+              )}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.8 }}
+                className="absolute bottom-4 left-4 right-4 md:left-auto md:bottom-4 md:right-4 md:w-auto bg-background/80 backdrop-blur-sm rounded-lg p-4 shadow-xl z-20 hidden md:block"
+              >
+                <div className="flex items-center gap-3">
+                  <div 
+                    className="h-12 w-12 rounded-full flex items-center justify-center text-white text-2xl font-bold"
+                    style={{ backgroundColor: theme.primaryColor }}
+                  >
+                    {name.substring(0,1).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="font-bold text-foreground">{name}</p>
+                    <p className="text-sm text-muted-foreground">New Arrivals Daily</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-bold text-foreground">{name}</p>
-                  <p className="text-sm text-muted-foreground">New Arrivals Daily</p>
-                </div>
-              </div>
-            </motion.div>
+              </motion.div>
+            </div>
+
           </motion.div>
         </div>
       </div>
+      {!isPublishedView && hero_video_url && storeId && (
+        <ReplaceVideoModal
+          open={isReplaceModalOpen}
+          onOpenChange={setIsReplaceModalOpen}
+          storeId={storeId}
+          currentVideoUrl={hero_video_url}
+          onVideoReplaced={handleVideoReplaced}
+        />
+      )}
     </section>
   );
 };

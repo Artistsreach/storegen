@@ -3,12 +3,14 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Edit, Download, Copy } from 'lucide-react';
+import { ArrowLeft, Edit, Download, Copy, Eye, EyeOff } from 'lucide-react'; // Changed ExternalLink to Eye/EyeOff
 import { useToast } from '@/components/ui/use-toast';
+import { useStore } from '@/contexts/StoreContext'; // Import useStore
 
 const PreviewControls = ({ store, onEdit }) => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { viewMode, setViewMode } = useStore(); // Get viewMode and setViewMode
   
   const handleExport = () => {
     // In a real implementation, this would generate and download the store code
@@ -27,13 +29,27 @@ const PreviewControls = ({ store, onEdit }) => {
   };
   
   const handleCopyLink = () => {
-    // In a real implementation, this would copy a shareable link
-    navigator.clipboard.writeText(`https://storegen.app/preview/${store.id}`);
-    
+    navigator.clipboard.writeText(`${window.location.origin}/store/${store.id}`); 
     toast({
       title: 'Link Copied',
-      description: 'Store preview link has been copied to clipboard.',
+      description: 'Store link has been copied to clipboard.',
     });
+  };
+
+  const handleToggleViewMode = () => {
+    const newMode = viewMode === 'edit' ? 'published' : 'edit';
+    setViewMode(newMode);
+    toast({
+      title: `Switched to ${newMode === 'published' ? 'Consumer View' : 'Admin View'}`,
+      description: `Store is now in ${newMode === 'published' ? 'consumer' : 'admin editing'} mode.`,
+    });
+  };
+
+  const handleEditStoreClick = () => {
+    if (viewMode !== 'edit') {
+      setViewMode('edit');
+    }
+    onEdit(); // This opens the EditStoreForm modal
   };
   
   return (
@@ -54,30 +70,51 @@ const PreviewControls = ({ store, onEdit }) => {
         </Button>
         
         <div className="flex items-center gap-2">
+          {viewMode === 'edit' && (
+            <>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleCopyLink}
+              >
+                <Copy className="mr-2 h-4 w-4" />
+                Copy Link
+              </Button>
+              
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleExport}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Export Code
+              </Button>
+              
+              <Button 
+                size="sm"
+                onClick={handleEditStoreClick} // Updated handler
+              >
+                <Edit className="mr-2 h-4 w-4" />
+                Edit Store
+              </Button>
+            </>
+          )}
+
           <Button 
-            variant="outline" 
             size="sm"
-            onClick={handleCopyLink}
+            onClick={handleToggleViewMode}
+            variant="outline"
+            className={viewMode === 'edit' ? "text-green-600 border-green-600 hover:bg-green-50 hover:text-green-700" : "text-blue-600 border-blue-600 hover:bg-blue-50 hover:text-blue-700"}
           >
-            <Copy className="mr-2 h-4 w-4" />
-            Copy Link
-          </Button>
-          
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={handleExport}
-          >
-            <Download className="mr-2 h-4 w-4" />
-            Export Code
-          </Button>
-          
-          <Button 
-            size="sm"
-            onClick={onEdit}
-          >
-            <Edit className="mr-2 h-4 w-4" />
-            Edit Store
+            {viewMode === 'edit' ? (
+              <>
+                <Eye className="mr-2 h-4 w-4" /> View as Consumer
+              </>
+            ) : (
+              <>
+                <EyeOff className="mr-2 h-4 w-4" /> View as Admin
+              </>
+            )}
           </Button>
         </div>
       </div>

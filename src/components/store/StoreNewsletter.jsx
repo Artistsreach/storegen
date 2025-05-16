@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Mail } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 
-const StoreNewsletter = ({ store }) => {
+const StoreNewsletter = ({ store, isPublishedView = false }) => {
   const { theme, content, name: storeName } = store;
   const { toast } = useToast();
   const [email, setEmail] = useState('');

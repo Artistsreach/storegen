@@ -36,12 +36,24 @@ const StoreCard = ({ store }) => {
   const { deleteStore } = useStore();
   
   const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    }).format(date);
+    if (!dateString) {
+      return 'N/A';
+    }
+    try {
+      const date = new Date(dateString);
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        return 'Invalid Date';
+      }
+      return new Intl.DateTimeFormat('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      }).format(date);
+    } catch (error) {
+      console.error("Error formatting date:", dateString, error);
+      return 'Error Date';
+    }
   };
   
   const getStoreTypeIcon = (type) => {
@@ -103,7 +115,7 @@ const StoreCard = ({ store }) => {
           <Button 
             variant="outline" 
             size="sm"
-            onClick={() => navigate(`/preview/${store.id}`)}
+            onClick={() => navigate(`/store/${store.id}`)}
           >
             Preview
           </Button>
@@ -113,7 +125,7 @@ const StoreCard = ({ store }) => {
               variant="ghost" 
               size="icon" 
               className="h-8 w-8"
-              onClick={() => navigate(`/preview/${store.id}?edit=true`)}
+              onClick={() => navigate(`/store/${store.id}?edit=true`)}
             >
               <Edit className="h-4 w-4" />
               <span className="sr-only">Edit</span>

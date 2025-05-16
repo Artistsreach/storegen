@@ -7,12 +7,16 @@ import { ShoppingCart, Star, Eye } from 'lucide-react';
 import { useStore } from '@/contexts/StoreContext';
 import { Link } from 'react-router-dom';
 
-const ProductCard = ({ product, theme, index, storeId }) => {
-  const { name, price, rating, description, image, currencyCode = 'USD', id: productId } = product;
+const ProductCard = ({ product, theme, index, storeId, isPublishedView = false }) => {
+  const { name, price, rating, description, image, currencyCode = 'USD', id: rawProductId } = product;
   const { addToCart } = useStore();
 
+  // Encode Shopify GIDs for URL safety
+  const isShopifyGid = (id) => typeof id === 'string' && id.startsWith('gid://shopify/');
+  const productId = isShopifyGid(rawProductId) ? btoa(rawProductId) : rawProductId;
+
   const imageUrl = image?.src?.medium || image?.url || `https://via.placeholder.com/400x400.png?text=${encodeURIComponent(name)}`;
-  const imageAlt = image?.alt || image?.altText || `${name} product image`;
+  const imageAlt = image?.alt || `${name} product image`; // Simplified alt text logic
   
   const handleAddToCart = (e) => {
     e.preventDefault(); // Prevent link navigation if button inside Link
@@ -29,9 +33,10 @@ const ProductCard = ({ product, theme, index, storeId }) => {
       className="product-card h-full"
     >
       <Card className="h-full overflow-hidden border hover:border-primary/50 transition-all duration-300 flex flex-col group bg-card shadow-sm hover:shadow-lg">
+        {/* Removed isPublishedView from state, ProductDetail will get it from context */}
         <Link to={`/store/${storeId}/product/${productId}`} className="block">
           <div className="aspect-square relative overflow-hidden bg-muted">
-            <img-replace 
+            <img 
               alt={imageAlt}
               className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
               src={imageUrl} />
@@ -49,6 +54,7 @@ const ProductCard = ({ product, theme, index, storeId }) => {
         </Link>
         
         <CardContent className="p-4 flex-grow">
+          {/* Removed isPublishedView from state */}
           <Link to={`/store/${storeId}/product/${productId}`} className="block">
             <div className="flex justify-between items-start mb-1.5">
               <h3 className="font-semibold text-md lg:text-lg line-clamp-2 group-hover:text-primary transition-colors" style={{"--hover-color": theme.primaryColor}}>{name}</h3>

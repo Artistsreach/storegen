@@ -10,7 +10,7 @@ const defaultFeatures = [
   { icon: Repeat, title: "Easy Returns & Exchanges", description: "Not satisfied? We offer a hassle-free return and exchange policy." }
 ];
 
-const StoreFeatures = ({ store }) => {
+const StoreFeatures = ({ store, isPublishedView = false }) => {
   const { theme, content, id: storeId } = store;
   const features = defaultFeatures.map((feat, i) => ({
     ...feat,

@@ -3,7 +3,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import ProductCard from '@/components/store/ProductCard';
 
-const ProductGrid = ({ store }) => {
+const ProductGrid = ({ store, isPublishedView = false }) => {
   const { products, theme, id: storeId } = store;
   
   if (!products || products.length === 0) {
@@ -38,6 +38,7 @@ const ProductGrid = ({ store }) => {
               theme={theme}
               index={index}
               storeId={storeId}
+              isPublishedView={isPublishedView}
             />
           ))}
         </div>

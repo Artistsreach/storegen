@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom'; // useSearchParams no longer needed for 'edit'
 import { useStore } from '@/contexts/StoreContext';
 import StoreHeader from '@/components/store/StoreHeader';
 import StoreHero from '@/components/store/StoreHero';
@@ -12,94 +12,75 @@ import PreviewControls from '@/components/PreviewControls';
 import EditStoreForm from '@/components/EditStoreForm';
 import { useToast } from '@/components/ui/use-toast';
 
-const StorePreview = () => {
+const StorePreview = () => { // This component now serves as the main StorePage
   const { storeId } = useParams();
-  const [searchParams] = useSearchParams();
-  const { getStoreById, setCurrentStore } = useStore();
+  const { getStoreById, setCurrentStore, viewMode, isLoadingStores } = useStore(); // Get viewMode
   const { toast } = useToast();
   
   const [store, setStore] = useState(null);
-  const [isEditOpen, setIsEditOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isEditOpen, setIsEditOpen] = useState(false); // For the EditStoreForm modal
+  // isLoading is now primarily driven by isLoadingStores from context
   
   useEffect(() => {
-    const loadStore = () => {
-      setIsLoading(true);
-      const storeData = getStoreById(storeId);
-      
-      if (storeData) {
-        setStore(storeData);
-        setCurrentStore(storeData);
-        
-        // Check if edit mode is requested via URL
-        if (searchParams.get('edit') === 'true') {
-          setIsEditOpen(true);
-        }
-      } else {
-        toast({
-          title: 'Store Not Found',
-          description: 'The requested store could not be found.',
-          variant: 'destructive',
-        });
-      }
-      
-      setIsLoading(false);
-    };
-    
-    loadStore();
-  }, [storeId, getStoreById, setCurrentStore, searchParams, toast]);
+    if (isLoadingStores) return; // Wait for stores to be loaded
+
+    const storeData = getStoreById(storeId);
+    if (storeData) {
+      setStore(storeData);
+      setCurrentStore(storeData);
+      // EditStoreForm modal can be opened by PreviewControls based on viewMode
+    } else {
+      toast({
+        title: 'Store Not Found',
+        description: `Could not find store with ID: ${storeId}`,
+        variant: 'destructive',
+      });
+      // Potentially navigate away, e.g., to dashboard or an error page
+      // navigate('/');
+    }
+  }, [storeId, getStoreById, setCurrentStore, toast, isLoadingStores]);
   
-  if (isLoading) {
+  if (isLoadingStores || !store) { // Updated loading condition
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading store preview...</p>
+          <p className="text-muted-foreground">Loading store...</p>
         </div>
       </div>
     );
   }
   
-  if (!store) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center max-w-md mx-auto p-6 bg-background rounded-lg shadow-lg">
-          <h2 className="text-2xl font-bold mb-4">Store Not Found</h2>
-          <p className="text-muted-foreground mb-6">
-            The store you're looking for doesn't exist or has been deleted.
-          </p>
-          <button
-            onClick={() => window.history.back()}
-            className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
-          >
-            Go Back
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // No separate "Store Not Found" return here, as it's covered by the loading state
+  // or the toast + potential navigation in useEffect.
   
+  const isPublished = viewMode === 'published';
+
   return (
     <div className="min-h-screen bg-background">
-      <StoreHeader store={store} />
-      <StoreHero store={store} />
-      <ProductGrid store={store} />
-      <StoreFeatures store={store} />
-      <StoreNewsletter store={store} />
-      <StoreFooter store={store} />
+      <StoreHeader store={store} isPublishedView={isPublished} />
+      <StoreHero store={store} isPublishedView={isPublished} />
+      <ProductGrid store={store} isPublishedView={isPublished} />
+      <StoreFeatures store={store} isPublishedView={isPublished} />
+      <StoreNewsletter store={store} isPublishedView={isPublished} />
+      <StoreFooter store={store} isPublishedView={isPublished} />
       
+      {/* PreviewControls is now always rendered, it will handle its own button visibility */}
       <PreviewControls 
         store={store} 
         onEdit={() => setIsEditOpen(true)} 
       />
       
-      <EditStoreForm 
-        store={store} 
-        open={isEditOpen} 
-        onOpenChange={setIsEditOpen} 
-      />
+      {/* EditStoreForm is still conditional based on isEditOpen, which is controlled by PreviewControls/viewMode */}
+      {!isPublished && ( 
+        <EditStoreForm 
+          store={store} 
+          open={isEditOpen} 
+          onOpenChange={setIsEditOpen} 
+        />
+      )}
     </div>
   );
 };
 
-export default StorePreview;
+export default StorePreview; // Consider renaming file to StorePage.jsx later

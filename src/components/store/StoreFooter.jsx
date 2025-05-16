@@ -3,7 +3,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Facebook, Instagram, Twitter, Youtube, Linkedin } from 'lucide-react';
 
-const StoreFooter = ({ store }) => {
+const StoreFooter = ({ store, isPublishedView = false }) => {
   const { name, theme, id: storeId } = store;
   const currentYear = new Date().getFullYear();
 
@@ -14,8 +14,9 @@ const StoreFooter = ({ store }) => {
     { icon: Linkedin, href: "#", label: "LinkedIn" },
   ];
 
+  const basePath = `/store/${storeId}`; // Simplified base path
   const footerNavLinks = [
-    { href: `/preview/${storeId}`, label: "Home" },
+    { href: basePath, label: "Home" },
     { href: `#products-${storeId}`, label: "Products" },
     { href: "#", label: "About Us" },
     { href: "#", label: "Contact" },
