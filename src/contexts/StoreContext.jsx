@@ -13,9 +13,12 @@ import {
   fetchShopifyCollectionsList,
   fetchShopifyLocalizationInfo,
   generateAIProductsData,
+  mapBigCommerceDataToInternalStore, 
 } from '@/contexts/storeActions';
 import { fetchPexelsImages, generateId } from '@/lib/utils';
 import { generateLogoWithGemini } from '@/lib/geminiImageGeneration';
+// Import BigCommerce API functions
+import { fetchStoreSettings as fetchBCStoreSettings, fetchAllProducts as fetchBCAllProducts } from '@/lib/bigcommerce';
 
 
 const StoreContext = createContext(null);
@@ -64,6 +67,16 @@ export const StoreProvider = ({ children }) => {
   const [generatedLogoImage, setGeneratedLogoImage] = useState(null); // Store base64 image data
   const [isGeneratingLogo, setIsGeneratingLogo] = useState(false);
   const [logoGenerationError, setLogoGenerationError] = useState(null);
+
+  // BigCommerce Import Wizard State
+  const [bigCommerceWizardStep, setBigCommerceWizardStep] = useState(0);
+  const [bigCommerceStoreDomain, setBigCommerceStoreDomain] = useState('');
+  const [bigCommerceApiToken, setBigCommerceApiToken] = useState('');
+  const [bigCommercePreviewSettings, setBigCommercePreviewSettings] = useState(null);
+  const [bigCommercePreviewProducts, setBigCommercePreviewProducts] = useState({ items: [], pageInfo: { hasNextPage: false, endCursor: null } }); // items for BC
+  const [isFetchingBigCommercePreviewData, setIsFetchingBigCommercePreviewData] = useState(false);
+  const [bigCommerceImportError, setBigCommerceImportError] = useState(null);
+  // Note: BigCommerce logo generation might be handled differently or use existing Shopify logo functions if applicable.
 
 // Helper function to prepare store data for localStorage (strip/shorten large base64 images)
 const prepareStoresForLocalStorage = (storesArray) => {
@@ -337,26 +350,151 @@ const prepareStoresForLocalStorage = (storesArray) => {
       const finalStore = await commonStoreCreation(newStoreData);
       
       if (finalStore) {
-        resetShopifyWizardState(); // Clean up any wizard state
-        // ShopifyConnectForm should close itself upon seeing isGenerating turn false and no error.
-        setIsGenerating(false);
-        return true; // Indicate success to ShopifyConnectForm
-      } else {
-        // commonStoreCreation would have shown a toast for failure
-        throw new Error("Store creation failed after fetching Shopify data.");
+    resetShopifyWizardState(); 
+    setIsGenerating(false);
+    return true; 
+  } else {
+    throw new Error("Store creation failed after fetching Shopify data.");
+  }
+} catch (error) {
+  console.error('Error during direct Shopify import:', error);
+  setShopifyImportError(error.message || 'Failed to import Shopify store directly.');
+  toast({ title: 'Shopify Import Failed', description: error.message || 'Could not complete the import.', variant: 'destructive' });
+  setIsGenerating(false);
+  resetShopifyWizardState(); 
+  return false; 
+}
+};
+
+// BigCommerce Wizard Functions
+const resetBigCommerceWizardState = () => {
+  setBigCommerceWizardStep(0);
+  setBigCommerceStoreDomain('');
+  setBigCommerceApiToken('');
+  setBigCommercePreviewSettings(null);
+  setBigCommercePreviewProducts({ items: [], pageInfo: { hasNextPage: false, endCursor: null } });
+  setIsFetchingBigCommercePreviewData(false);
+  setBigCommerceImportError(null);
+  // Reset any BigCommerce specific logo state if added
+};
+
+const startBigCommerceImportWizard = async (domain, token) => {
+  // This function is called after BigCommerceConnectForm succeeds.
+  // It should set credentials and move to the next step (metadata preview).
+  setBigCommerceStoreDomain(domain);
+  setBigCommerceApiToken(token);
+  setBigCommerceWizardStep(2); // Move to metadata preview step
+  // Optionally, immediately fetch settings for preview
+  await fetchBigCommerceWizardSettings(domain, token);
+};
+
+const fetchBigCommerceWizardSettings = async (domain, token) => {
+  const currentDomain = domain || bigCommerceStoreDomain;
+  const currentToken = token || bigCommerceApiToken;
+  if (!currentDomain || !currentToken) {
+    setBigCommerceImportError('Domain or token missing for fetching BigCommerce settings.');
+    return;
+  }
+  setIsFetchingBigCommercePreviewData(true);
+  setBigCommerceImportError(null);
+  try {
+    const settings = await fetchBCStoreSettings(currentDomain, currentToken);
+    setBigCommercePreviewSettings(settings);
+  } catch (error) {
+    console.error('Error fetching BigCommerce settings for wizard:', error);
+    setBigCommerceImportError(error.message || 'Failed to fetch store settings.');
+    toast({ title: 'BigCommerce Settings Fetch Failed', description: error.message, variant: 'destructive' });
+  } finally {
+    setIsFetchingBigCommercePreviewData(false);
+  }
+};
+
+const fetchBigCommerceWizardProducts = async (count = 10) => { // BC API uses 'first' not cursor for initial, pagination is different
+  if (!bigCommerceStoreDomain || !bigCommerceApiToken) {
+    setBigCommerceImportError('Domain or token missing for fetching BigCommerce products.');
+    return;
+  }
+  setIsFetchingBigCommercePreviewData(true);
+  setBigCommerceImportError(null);
+  try {
+    // fetchBCAllProducts handles pagination internally. For preview, we might just want the first few.
+    // For simplicity in preview, let's fetch all and then slice, or modify fetchBCAllProducts to take a limit for preview.
+    // For now, let's assume we fetch a limited set or all and slice in component.
+    // The guide's fetchAllProducts fetches ALL. We might need a separate preview function or adapt.
+    // Let's simulate fetching a small batch for preview for now.
+    // This is a simplified version for preview. The real fetchAllProducts gets everything.
+    const query = `
+      query ProductsPreview($first: Int!) {
+        site {
+          products(first: $first) {
+            edges {
+              node {
+                entityId name sku defaultImage { url(width: 200) altText }
+                prices { price { value currencyCode } }
+              }
+            }
+          }
+        }
       }
-    } catch (error) {
-      console.error('Error during direct Shopify import:', error);
-      setShopifyImportError(error.message || 'Failed to import Shopify store directly.');
-      toast({ title: 'Shopify Import Failed', description: error.message || 'Could not complete the import.', variant: 'destructive' });
-      setIsGenerating(false);
-      // Ensure wizard step is reset or handled if ShopifyConnectForm is still open
-      // setShopifyWizardStep(1); // Or reset to 0 if form should close
-      resetShopifyWizardState(); // Reset fully
-      return false; // Indicate failure
+    `;
+    const variables = { first: count };
+    const res = await fetch(`https://${bigCommerceStoreDomain}/graphql`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bigCommerceApiToken}` },
+      body: JSON.stringify({ query, variables }),
+    });
+    const result = await res.json();
+    if (result.errors) throw new Error(result.errors.map(e => e.message).join(', '));
+    
+    setBigCommercePreviewProducts({
+      items: result.data.site.products.edges.map(e => e.node),
+      // pageInfo might not be relevant if we only fetch a small batch for preview
+      pageInfo: { hasNextPage: false, endCursor: null } 
+    });
+
+  } catch (error) {
+    console.error('Error fetching BigCommerce products for wizard:', error);
+    setBigCommerceImportError(error.message || 'Failed to fetch products.');
+    toast({ title: 'BigCommerce Product Fetch Failed', description: error.message, variant: 'destructive' });
+  } finally {
+    setIsFetchingBigCommercePreviewData(false);
+  }
+};
+
+const finalizeBigCommerceImportFromWizard = async () => {
+  if (!bigCommercePreviewSettings || !bigCommerceStoreDomain || !bigCommerceApiToken) {
+    toast({ title: 'Import Error', description: 'Missing BigCommerce data to finalize import.', variant: 'destructive' });
+    return false;
+  }
+  setIsGenerating(true);
+  setBigCommerceImportError(null);
+  try {
+    // Fetch all products for the final import
+    const allProducts = await fetchBCAllProducts(bigCommerceStoreDomain, bigCommerceApiToken);
+
+    const newStoreData = mapBigCommerceDataToInternalStore(
+      bigCommercePreviewSettings,
+      allProducts, // Use all fetched products
+      bigCommerceStoreDomain,
+      { generateId },
+      null // No AI-generated logo for BigCommerce import for now, uses store's own.
+    );
+    
+    const finalStore = await commonStoreCreation(newStoreData);
+    if (finalStore) {
+      resetBigCommerceWizardState();
+      return true;
     }
-    // setIsGenerating(false); // Already handled in try/catch/finally of commonStoreCreation or here
-  };
+    return false;
+  } catch (error) {
+    console.error('Error finalizing BigCommerce import from wizard:', error);
+    setBigCommerceImportError(error.message || 'Failed to finalize BigCommerce import.');
+    toast({ title: 'BigCommerce Import Failed', description: error.message, variant: 'destructive' });
+    return false;
+  } finally {
+    setIsGenerating(false);
+  }
+};
 
   const fetchShopifyWizardProducts = async (first = 10, cursor = null) => {
     if (!shopifyDomain || !shopifyToken) {
@@ -467,7 +605,7 @@ const prepareStoresForLocalStorage = (storesArray) => {
       toast({ title: 'Import Error', description: 'Missing essential Shopify data to finalize import.', variant: 'destructive' });
       return false;
     }
-    setIsGenerating(true); // Use existing isGenerating for final import
+    setIsGenerating(true); 
     setShopifyImportError(null);
     try {
       // Ensure products and collections are arrays of nodes
@@ -669,17 +807,28 @@ const prepareStoresForLocalStorage = (storesArray) => {
 
     // Shopify Wizard related state and functions
     shopifyWizardStep, setShopifyWizardStep,
-    shopifyDomain, shopifyToken,
+    shopifyDomain, shopifyToken, // These might become generic if we have one set of credential fields
     shopifyPreviewMetadata, shopifyPreviewProducts, shopifyPreviewCollections, shopifyLocalization,
     isFetchingShopifyPreviewData, shopifyImportError,
-    generatedLogoImage, isGeneratingLogo, logoGenerationError, // Logo state
+    generatedLogoImage, isGeneratingLogo, logoGenerationError,
     startShopifyImportWizard,
     fetchShopifyWizardProducts,
     fetchShopifyWizardCollections,
     fetchShopifyWizardLocalization,
-    generateShopifyStoreLogo, // Logo function
+    generateShopifyStoreLogo,
     finalizeShopifyImportFromWizard,
     resetShopifyWizardState,
+
+    // BigCommerce Wizard related state and functions
+    bigCommerceWizardStep, setBigCommerceWizardStep,
+    bigCommerceStoreDomain, bigCommerceApiToken, // BC specific credentials
+    bigCommercePreviewSettings, bigCommercePreviewProducts,
+    isFetchingBigCommercePreviewData, bigCommerceImportError,
+    startBigCommerceImportWizard,
+    fetchBigCommerceWizardSettings,
+    fetchBigCommerceWizardProducts,
+    finalizeBigCommerceImportFromWizard,
+    resetBigCommerceWizardState,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

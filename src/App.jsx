@@ -8,13 +8,15 @@ import StorePreview from '@/pages/StorePreview';
 import ProductDetail from '@/pages/ProductDetail';
 import CheckoutPage from '@/pages/CheckoutPage';
 import AuthPage from '@/pages/AuthPage';
+import PricingPage from '@/pages/PricingPage'; // Added PricingPage import
+import OrderConfirmationPage from '@/pages/OrderConfirmationPage'; // Added OrderConfirmationPage import
 import { StoreProvider } from '@/contexts/StoreContext';
 import { useAuth } from '@/contexts/AuthContext';
 
 const App = () => {
-  const { isAuthenticated, userRole, loadingRole } = useAuth();
+  const { isAuthenticated, userRole, loadingProfile } = useAuth(); // Changed loadingRole to loadingProfile
 
-  if (loadingRole) {
+  if (loadingProfile) { // Changed loadingRole to loadingProfile
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-gray-900 dark:to-slate-900">
         <p className="text-xl">Loading...</p> {/* Replace with a proper spinner/loader component later */}
@@ -39,6 +41,7 @@ const App = () => {
             } 
           />
           <Route path="/auth" element={!isAuthenticated ? <AuthPage /> : <Navigate to="/" replace />} />
+          <Route path="/pricing" element={<PricingPage />} /> {/* Added PricingPage route */}
           {/* 
             TODO: Protect these routes or adjust based on auth/role.
             For now, they remain accessible, but RLS should protect data.
@@ -46,6 +49,7 @@ const App = () => {
           <Route path="/store/:storeId" element={<StorePreview />} /> 
           <Route path="/store/:storeId/product/:productId" element={<ProductDetail />} />
           <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/order-confirmation" element={<OrderConfirmationPage />} /> {/* Added OrderConfirmationPage route */}
           
           {/* Fallback route for any undefined paths */}
           <Route path="*" element={<Navigate to="/" replace />} />

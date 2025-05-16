@@ -1,15 +1,18 @@
 
-import React from 'react';
+import React, { useState } from 'react'; // Keep this one as it includes useState
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ShoppingCart, Star, Eye } from 'lucide-react';
+import { ShoppingCart, Star, Eye, Zap as BuyNowIcon } from 'lucide-react'; // Added BuyNowIcon
 import { useStore } from '@/contexts/StoreContext';
 import { Link } from 'react-router-dom';
+import { stripePromise } from '@/lib/stripe'; // Added stripePromise
 
 const ProductCard = ({ product, theme, index, storeId, isPublishedView = false }) => {
-  const { name, price, rating, description, image, currencyCode = 'USD', id: rawProductId } = product;
+  const { name, price, rating, description, image, currencyCode = 'USD', id: rawProductId, stripe_price_id } = product; // Added stripe_price_id
   const { addToCart } = useStore();
+  const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
+  const [checkoutError, setCheckoutError] = useState(null);
 
   // Encode Shopify GIDs for URL safety
   const isShopifyGid = (id) => typeof id === 'string' && id.startsWith('gid://shopify/');
@@ -22,6 +25,60 @@ const ProductCard = ({ product, theme, index, storeId, isPublishedView = false }
     e.preventDefault(); // Prevent link navigation if button inside Link
     e.stopPropagation();
     addToCart(product, storeId);
+  };
+
+  const handleBuyNow = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!stripe_price_id) {
+      setCheckoutError('This product is not available for purchase at the moment.');
+      console.error('Stripe Price ID is missing for product:', product);
+      return;
+    }
+
+    setIsCheckoutLoading(true);
+    setCheckoutError(null);
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-checkout-session`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // No Authorization header needed for public checkout usually
+            // 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY // If function requires it
+          },
+          body: JSON.stringify({ 
+            priceId: stripe_price_id,
+            storeId: storeId,
+            productId: rawProductId, // Using the original product ID for metadata
+            quantity: 1 
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create checkout session.');
+      }
+
+      const { sessionId } = data;
+      const stripe = await stripePromise;
+      const { error: stripeError } = await stripe.redirectToCheckout({ sessionId });
+
+      if (stripeError) {
+        console.error('Stripe redirect error:', stripeError);
+        setCheckoutError(stripeError.message);
+      }
+    } catch (err) {
+      console.error('Checkout error:', err);
+      setCheckoutError(err.message);
+    } finally {
+      setIsCheckoutLoading(false);
+    }
   };
 
   return (
@@ -79,15 +136,28 @@ const ProductCard = ({ product, theme, index, storeId, isPublishedView = false }
           </div>
         </CardContent>
         
-        <CardFooter className="p-4 pt-0 mt-auto">
+        <CardFooter className="p-4 pt-0 mt-auto flex flex-col gap-2">
           <Button 
             className="w-full transition-transform duration-200 hover:scale-105"
-            style={{ backgroundColor: theme.primaryColor, color: 'white' }}
+            style={{ backgroundColor: theme.primaryColor, color: theme.primaryTextColor || 'white' }}
             onClick={handleAddToCart}
+            disabled={isCheckoutLoading}
           >
             <ShoppingCart className="mr-2 h-4 w-4" />
             Add to Cart
           </Button>
+          {stripe_price_id && ( // Only show Buy Now if stripe_price_id exists
+            <Button 
+              variant="outline"
+              className="w-full transition-transform duration-200 hover:scale-105"
+              onClick={handleBuyNow}
+              disabled={isCheckoutLoading}
+            >
+              <BuyNowIcon className="mr-2 h-4 w-4" />
+              {isCheckoutLoading ? 'Processing...' : 'Buy Now'}
+            </Button>
+          )}
+          {checkoutError && <p className="text-xs text-red-500 mt-1">{checkoutError}</p>}
         </CardFooter>
       </Card>
     </motion.div>

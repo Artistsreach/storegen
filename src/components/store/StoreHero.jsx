@@ -1,18 +1,57 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, ShoppingBag, Edit2Icon } from 'lucide-react'; // Added Edit2Icon
-import ReplaceVideoModal from './ReplaceVideoModal'; // Added import
-import { useStore } from '@/contexts/StoreContext'; // Added import
+import { ArrowRight, ShoppingBag, Edit2Icon } from 'lucide-react';
+import ReplaceVideoModal from './ReplaceVideoModal';
+import { useStore } from '@/contexts/StoreContext';
+import { generateHeroContent } from '@/lib/gemini'; // Import Gemini function
 
 const StoreHero = ({ store, isPublishedView = false }) => {
-  const { name, theme, heroImage, content, id: storeId, hero_video_url, hero_video_poster_url } = store;
-  const { updateStore } = useStore(); // Added useStore
-  const [isReplaceModalOpen, setIsReplaceModalOpen] = useState(false); // Added state for modal
-  
-  const heroTitle = content?.heroTitle || `Welcome to ${name}`;
-  const heroDescription = content?.heroDescription || `Explore ${name}, your destination for amazing products.`;
+  const { name, theme, heroImage, content, id: storeId, hero_video_url, hero_video_poster_url, niche, description: storeDescription, targetAudience, style } = store; // Assuming niche, description etc. are part of store prop
+  const { updateStore } = useStore();
+  const [isReplaceModalOpen, setIsReplaceModalOpen] = useState(false);
+
+  const [aiHeroTitle, setAiHeroTitle] = useState('');
+  const [aiHeroDescription, setAiHeroDescription] = useState('');
+  const [isLoadingAiContent, setIsLoadingAiContent] = useState(false);
+
+  useEffect(() => {
+    if (store && name) { // Only run if store and name are available
+      setIsLoadingAiContent(true);
+      const storeInfoForAI = {
+        name,
+        niche: store.niche || content?.niche, // Prioritize top-level, then content
+        description: store.description || content?.description, // Prioritize top-level, then content
+        targetAudience: store.targetAudience || content?.targetAudience,
+        style: store.style || content?.style,
+      };
+      
+      generateHeroContent(storeInfoForAI)
+        .then(data => {
+          if (data && !data.error) {
+            setAiHeroTitle(data.heroTitle);
+            setAiHeroDescription(data.heroDescription);
+          } else {
+            console.error("Failed to generate AI hero content:", data?.error);
+            // Optionally, clear AI content or use defaults explicitly
+            setAiHeroTitle(''); 
+            setAiHeroDescription('');
+          }
+        })
+        .catch(error => {
+          console.error("Error calling generateHeroContent:", error);
+          setAiHeroTitle('');
+          setAiHeroDescription('');
+        })
+        .finally(() => {
+          setIsLoadingAiContent(false);
+        });
+    }
+  }, [storeId, name, store.niche, store.description, store.targetAudience, store.style, content?.niche, content?.description, content?.targetAudience, content?.style]); // Re-run if these specific store details change
+
+  const heroTitle = isLoadingAiContent ? "Crafting something special..." : (aiHeroTitle || content?.heroTitle || `Welcome to ${name}`);
+  const heroDescription = isLoadingAiContent ? "Just a moment..." : (aiHeroDescription || content?.heroDescription || `Explore ${name}, your destination for amazing products.`);
   
   const imageUrl = heroImage?.src?.large || heroImage?.url || 'https://via.placeholder.com/1200x800.png?text=Store+Image';
   const imageAlt = heroImage?.alt || heroImage?.altText || `${name} hero image`;

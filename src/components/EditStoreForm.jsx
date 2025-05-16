@@ -61,7 +61,7 @@ const EditStoreForm = ({ store, open, onOpenChange }) => {
     e.preventDefault();
     updateStore(store.id, formData);
     onOpenChange(false);
-    navigate(`/preview/${store.id}`);
+    // navigate(`/preview/${store.id}`); // Removed to keep user on the current page
   };
   
   return (

@@ -19,39 +19,41 @@ export const AuthProvider = ({ children }) => {
 const AuthUserProvider = ({ children }) => {
   const session = useSession();
   const supabaseClient = useSupabaseClient();
-  const [userRole, setUserRole] = useState(null);
-  const [loadingRole, setLoadingRole] = useState(true);
+  const [profile, setProfile] = useState(null); // Changed to store full profile
+  const [loadingProfile, setLoadingProfile] = useState(true); // Renamed loading state
   const [user, setUser] = useState(null);
 
   useEffect(() => {
     if (session?.user) {
       setUser(session.user);
-      setLoadingRole(true);
+      setLoadingProfile(true);
       supabaseClient
         .from('profiles')
-        .select('role')
+        .select('role, stripe_customer_id, subscription_status, stripe_subscription_id') // Fetch all needed fields
         .eq('id', session.user.id)
         .single()
         .then(({ data, error }) => {
           if (data) {
-            setUserRole(data.role);
-          } else if (error) {
-            console.error('Error fetching user role:', error);
-            // Potentially handle case where profile doesn't exist yet
-            // For now, assume 'store_owner' or null if no profile
-            setUserRole('store_owner'); 
+            setProfile(data);
+          } else if (error && error.code !== 'PGRST116') { // PGRST116: No rows found, profile might not exist yet
+            console.error('Error fetching user profile:', error);
+            setProfile({ role: 'store_owner' }); // Default role on error if profile fetch fails
+          } else {
+            // Profile doesn't exist, could be a new user before handle_new_user trigger runs
+            // or if trigger is not set up. For now, provide a default.
+            setProfile({ role: 'store_owner', subscription_status: null });
           }
-          setLoadingRole(false);
+          setLoadingProfile(false);
         })
         .catch(error => {
-            console.error('Error in promise fetching user role:', error);
-            setUserRole('store_owner'); // Default role on error
-            setLoadingRole(false);
+            console.error('Error in promise fetching user profile:', error);
+            setProfile({ role: 'store_owner' }); // Default role on critical error
+            setLoadingProfile(false);
         });
     } else {
       setUser(null);
-      setUserRole(null);
-      setLoadingRole(false);
+      setProfile(null);
+      setLoadingProfile(false);
     }
   }, [session, supabaseClient]);
 
@@ -62,10 +64,10 @@ const AuthUserProvider = ({ children }) => {
     const { data } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         setUser(session?.user ?? null);
-        // If a user signs in and there's no role yet, the other useEffect will fetch it.
-        // If a user signs out, role should be cleared.
+        // If a user signs in and there's no profile yet, the other useEffect will fetch it.
+        // If a user signs out, profile should be cleared.
         if (event === 'SIGNED_OUT') {
-          setUserRole(null);
+          setProfile(null);
         }
       }
     );
@@ -83,7 +85,15 @@ const AuthUserProvider = ({ children }) => {
 
 
   return (
-    <AuthContext.Provider value={{ session, user, userRole, loadingRole, isAuthenticated: !!session?.user }}>
+    <AuthContext.Provider value={{ 
+      session, 
+      user, 
+      profile, // Provide full profile
+      userRole: profile?.role, // Convenience accessor for role
+      subscriptionStatus: profile?.subscription_status, // Convenience accessor
+      loadingProfile, // Renamed loading state
+      isAuthenticated: !!session?.user 
+    }}>
       {children}
     </AuthContext.Provider>
   );

@@ -70,3 +70,66 @@ export async function generateStoreNameSuggestions(promptContent) {
     return { error: `Error generating suggestions: ${error.message}` };
   }
 }
+
+export async function generateHeroContent(storeInfo) {
+  if (!apiKey) {
+    console.error("API Key not configured. Cannot generate hero content.");
+    return { error: "API Key not configured." };
+  }
+
+  const genAI = new GoogleGenAI({ apiKey });
+
+  const { name, niche, description, targetAudience, style } = storeInfo;
+
+  // Construct a detailed prompt for better results
+  let promptContent = `Generate a compelling hero title and a short, engaging hero description for an online store.
+Store Name: ${name || 'N/A'}
+Niche: ${niche || 'General E-commerce'}
+Description/Keywords: ${description || 'A variety of products.'}
+Target Audience: ${targetAudience || 'General consumers'}
+Style/Vibe: ${style || 'Modern and friendly'}
+
+The hero title should be catchy and reflect the store's essence.
+The hero description should be 1-2 sentences, inviting users to explore.
+
+Return the result as a JSON object with two keys: "heroTitle" and "heroDescription".
+For example: { "heroTitle": "Example Title", "heroDescription": "Example description." }`;
+
+  try {
+    const response = await genAI.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: promptContent,
+    });
+
+    let text = "";
+    if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts && response.candidates[0].content.parts.length > 0 && response.candidates[0].content.parts[0].text) {
+      text = response.candidates[0].content.parts[0].text;
+    } else {
+      console.error("Could not extract text from AI response for hero content. Response:", JSON.stringify(response));
+      return { error: "AI response structure not as expected or empty.", rawResponse: JSON.stringify(response) };
+    }
+
+    const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+    let heroData = {};
+    if (jsonMatch && jsonMatch[1]) {
+      heroData = JSON.parse(jsonMatch[1]);
+    } else {
+      try {
+        heroData = JSON.parse(text);
+      } catch (e) {
+        console.error("Failed to parse hero content as JSON from:", text, e);
+        return { error: "Could not parse hero content from AI response.", rawResponse: text };
+      }
+    }
+
+    if (!heroData.heroTitle || !heroData.heroDescription) {
+      console.error("Parsed hero data is missing title or description:", heroData);
+      return { error: "AI response did not contain heroTitle and heroDescription.", rawResponse: text };
+    }
+
+    return { heroTitle: heroData.heroTitle, heroDescription: heroData.heroDescription };
+  } catch (error) {
+    console.error("Error generating hero content:", error);
+    return { error: `Error generating hero content: ${error.message}` };
+  }
+}

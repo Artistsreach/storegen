@@ -9,7 +9,6 @@ const safetySettings = [
   { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
 ];
 
-// Added logoImageBase64 and logoMimeType parameters
 export async function generateProductWithGemini(productType, storeName, logoImageBase64 = null, logoMimeType = 'image/png') {
   if (!API_KEY) {
     console.error("[geminiProductGeneration Function] VITE_GEMINI_API_KEY is not available.");
@@ -22,7 +21,7 @@ export async function generateProductWithGemini(productType, storeName, logoImag
 
   const ai = new GoogleGenAI({ apiKey: API_KEY });
 
-  let prompt = `Generate a product for a store named "${storeName}" that sells ${productType}.
+  let basePrompt = `Generate a product for a store named "${storeName}" that sells ${productType}.
 The product should include:
 1. A catchy title.
 2. A brief description (15-25 words).
@@ -30,7 +29,8 @@ The product should include:
 4. A visually appealing product image.
 
 Return the text details (title, description, price) as a single JSON object in the text part of your response.
-IMPORTANT: The text part of your response must contain ONLY this JSON object and NO other text, explanations, or conversational remarks. For example:
+Your entire text response MUST be ONLY the JSON object. Do not include any other words, phrases, or conversational text before or after the JSON object.
+The JSON object should strictly follow this format:
 {
   "title": "Example Product Title",
   "description": "This is a fantastic example product, perfect for your needs and desires.",
@@ -40,133 +40,139 @@ IMPORTANT: The text part of your response must contain ONLY this JSON object and
 Generate an image for this product in the image part of your response.`;
 
   const geminiContents = [];
+  let currentPrompt = basePrompt;
+
   if (logoImageBase64) {
-    prompt += `\n\nA logo image is also provided. Subtly incorporate this logo onto the product, its packaging, or in the scene if appropriate. For example, it could be a small brand mark on the item or a logo in the background if it's a lifestyle shot. Ensure the product remains the main focus.`;
-    geminiContents.push({ text: prompt });
+    currentPrompt += `\n\nA logo image is also provided. Subtly incorporate this logo onto the product, its packaging, or in the scene if appropriate. For example, it could be a small brand mark on the item or a logo in the background if it's a lifestyle shot. Ensure the product remains the main focus.`;
+    geminiContents.push({ text: currentPrompt });
     geminiContents.push({ inlineData: { data: logoImageBase64, mimeType: logoMimeType } });
     console.log(`[geminiProductGeneration Function] Generating product with logo for type: ${productType}, store: ${storeName}`);
   } else {
-    geminiContents.push({ text: prompt });
+    geminiContents.push({ text: currentPrompt });
     console.log(`[geminiProductGeneration Function] Generating product without logo for type: ${productType}, store: ${storeName}`);
   }
 
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash-preview-image-generation", // This model supports image and text
-      contents: geminiContents, // Use the constructed contents array
-      safetySettings,
-      config: {
-        responseModalities: [Modality.TEXT, Modality.IMAGE],
-      },
-    });
+  let productTextDetails = null;
+  let imageData = null;
+  let rawTextResponseAccumulator = ""; // To accumulate text across attempts for final error if needed
+  let attempts = 0;
+  const maxAttempts = 2; // Try up to 2 times
 
-    let productTextDetails = null;
-    let imageData = null;
-    let rawTextResponse = "";
+  while (attempts < maxAttempts) {
+    attempts++;
+    console.log(`[geminiProductGeneration Function] Attempt ${attempts} to generate content...`);
+    
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash-preview-image-generation",
+        contents: geminiContents, // Contents are prepared once before the loop
+        safetySettings,
+        config: {
+          responseModalities: [Modality.TEXT, Modality.IMAGE],
+        },
+      });
 
-    if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts) {
-      for (const part of response.candidates[0].content.parts) {
-        if (part.text) {
-          rawTextResponse += part.text;
-          try {
-            let jsonStringToParse = null;
-            const trimmedText = part.text.trim();
-            
-            // Attempt to find JSON, whether it's wrapped in markdown, at the start, or at the end.
-            // Strategy:
-            // 1. Check for markdown-style JSON.
-            // 2. If not found, find the first '{' and try to parse from there to its corresponding '}'.
-            // 3. If that fails or isn't found, find the last '{' and try to parse from there. (Handles JSON at the end)
+      // Reset for each attempt before parsing parts
+      productTextDetails = null; 
+      imageData = null;
+      let currentAttemptRawText = "";
 
-            const markdownJsonMatch = trimmedText.match(/```json\s*([\s\S]*?)\s*```/);
-            if (markdownJsonMatch && markdownJsonMatch[1]) {
-              jsonStringToParse = markdownJsonMatch[1];
-            } else {
-              // Try to find any substring that is a valid JSON object.
-              // This is a common pattern: some text, then the JSON.
-              // So, look for the last '{' which might start the JSON block.
-              let firstBrace = trimmedText.indexOf('{');
-              let lastBrace = trimmedText.lastIndexOf('{'); // Prefer JSON at the end if multiple '{'
+      if (response.candidates && response.candidates.length > 0 && response.candidates[0].content && response.candidates[0].content.parts) {
+        for (const part of response.candidates[0].content.parts) {
+          if (part.text) {
+            currentAttemptRawText += part.text;
+            try {
+              let jsonStringToParse = null;
+              const trimmedText = part.text.trim();
+              
+              const markdownJsonMatch = trimmedText.match(/```json\s*([\s\S]*?)\s*```/);
+              if (markdownJsonMatch && markdownJsonMatch[1]) {
+                jsonStringToParse = markdownJsonMatch[1];
+              } else {
+                let firstBrace = trimmedText.indexOf('{');
+                let lastBrace = trimmedText.lastIndexOf('{');
+                let searchStartIndex = lastBrace !== -1 ? lastBrace : firstBrace;
 
-              // Start search from lastBrace if it exists, otherwise from firstBrace
-              let searchStartIndex = lastBrace !== -1 ? lastBrace : firstBrace;
-
-              if (searchStartIndex !== -1) {
-                let balance = 0;
-                let endIndex = -1;
-                // Iterate from the chosen brace to find its corresponding closing brace
-                for (let i = searchStartIndex; i < trimmedText.length; i++) {
-                  if (trimmedText[i] === '{') {
-                    balance++;
-                  } else if (trimmedText[i] === '}') {
-                    balance--;
-                  }
-                  if (balance === 0 && searchStartIndex === i && trimmedText[i] !== '{') { 
-                    // Edge case: searchStartIndex was not '{', something is wrong.
-                    break;
-                  }
-                  if (balance === 0 && trimmedText[i] === '}') {
-                    endIndex = i;
-                    jsonStringToParse = trimmedText.substring(searchStartIndex, endIndex + 1);
-                    // Validate this substring is JSON, if not, try from firstBrace if we used lastBrace
-                    try {
-                      JSON.parse(jsonStringToParse); // Test parse
-                      break; // Found valid JSON
-                    } catch (e) {
-                      jsonStringToParse = null; // Invalid, reset
-                      if (searchStartIndex === lastBrace && firstBrace !== -1 && firstBrace !== lastBrace) {
-                        // Retry with firstBrace if lastBrace attempt failed
-                        searchStartIndex = firstBrace; 
-                        i = firstBrace -1; // restart loop from firstBrace
-                        balance = 0; // reset balance
-                        continue;
+                if (searchStartIndex !== -1) {
+                  let balance = 0;
+                  let endIndex = -1;
+                  for (let i = searchStartIndex; i < trimmedText.length; i++) {
+                    if (trimmedText[i] === '{') balance++;
+                    else if (trimmedText[i] === '}') balance--;
+                    if (balance === 0 && searchStartIndex === i && trimmedText[i] !== '{') break;
+                    if (balance === 0 && trimmedText[i] === '}') {
+                      endIndex = i;
+                      jsonStringToParse = trimmedText.substring(searchStartIndex, endIndex + 1);
+                      try {
+                        JSON.parse(jsonStringToParse); // Test parse
+                        break; 
+                      } catch (e) {
+                        jsonStringToParse = null; 
+                        if (searchStartIndex === lastBrace && firstBrace !== -1 && firstBrace !== lastBrace) {
+                          searchStartIndex = firstBrace; 
+                          i = firstBrace -1; 
+                          balance = 0; 
+                          continue;
+                        }
+                        break; 
                       }
-                      break; // Stop if this attempt failed
                     }
                   }
                 }
               }
-            }
 
-            if (jsonStringToParse) {
-              productTextDetails = JSON.parse(jsonStringToParse); // This should now be a valid JSON string
-            } else {
-              console.warn("[geminiProductGeneration Function] Could not extract JSON from text part:", part.text);
+              if (jsonStringToParse) {
+                productTextDetails = JSON.parse(jsonStringToParse);
+              } else {
+                console.warn(`[geminiProductGeneration Function] Attempt ${attempts}: Could not extract JSON from text part:`, part.text);
+              }
+            } catch (e) {
+              console.warn(`[geminiProductGeneration Function] Attempt ${attempts}: Error parsing extracted JSON. Original text:`, part.text, "Error:", e);
             }
-          } catch (e) {
-            console.warn("[geminiProductGeneration Function] Error parsing extracted JSON string:", jsonStringToParse, "Original text:", part.text, e);
+          } else if (part.inlineData && part.inlineData.data) {
+            imageData = part.inlineData.data;
+            console.log(`[geminiProductGeneration Function] Attempt ${attempts}: Image data found.`);
           }
-        } else if (part.inlineData && part.inlineData.data) {
-          imageData = part.inlineData.data;
-          console.log("[geminiProductGeneration Function] Image data found for product.");
         }
       }
+      rawTextResponseAccumulator += (rawTextResponseAccumulator ? "\n---\nAttempt " + attempts + ":\n" : "Attempt " + attempts + ":\n") + currentAttemptRawText;
+
+      if (productTextDetails && imageData) {
+        console.log(`[geminiProductGeneration Function] Successfully generated product on attempt ${attempts}.`);
+        break; // Exit retry loop if successful
+      } else {
+        console.warn(`[geminiProductGeneration Function] Attempt ${attempts} failed to get both text details and image.`);
+      }
+
+    } catch (error) {
+      console.error(`[geminiProductGeneration Function] Error during attempt ${attempts}:`, error.message, error.stack);
+      rawTextResponseAccumulator += (rawTextResponseAccumulator ? "\n---\n" : "") + `Attempt ${attempts} Error: ${error.message}`;
+      if (attempts >= maxAttempts) { // If this was the last attempt, rethrow
+        throw new Error(`Product generation failed after ${maxAttempts} attempts: ${error.message}`);
+      }
+      // Optionally, add a small delay before retrying
+      // await new Promise(resolve => setTimeout(resolve, 500)); 
     }
+  } // End of while loop
 
-    if (!productTextDetails || !imageData) {
-      let errorMsg = "Failed to generate complete product data. ";
-      if (!productTextDetails) errorMsg += "Text details missing. ";
-      if (!imageData) errorMsg += "Image data missing. ";
-      console.error(errorMsg, "Raw text response:", rawTextResponse);
-      throw new Error(errorMsg + `Raw text (if any): ${rawTextResponse}`);
-    }
-
-    // Validate parsed details (basic check)
-    if (typeof productTextDetails.title !== 'string' || 
-        typeof productTextDetails.description !== 'string' ||
-        (typeof productTextDetails.price !== 'string' && typeof productTextDetails.price !== 'number')) {
-      console.error("[geminiProductGeneration Function] Parsed product details are not in the expected format:", productTextDetails);
-      throw new Error("AI response for product details was not in the expected format (title, description, price).");
-    }
-    
-    // Ensure price is a string
-    productTextDetails.price = String(productTextDetails.price);
-
-    console.log("[geminiProductGeneration Function] Successfully generated product details and image data.");
-    return { ...productTextDetails, imageData };
-
-  } catch (error) {
-    console.error("[geminiProductGeneration Function] Error:", error.message, error.stack);
-    throw new Error(`Product generation failed: ${error.message}`);
+  if (!productTextDetails || !imageData) {
+    let errorMsg = "Failed to generate complete product data after all attempts. ";
+    if (!productTextDetails) errorMsg += "Text details missing. ";
+    if (!imageData) errorMsg += "Image data missing. ";
+    console.error(errorMsg, "Accumulated raw text responses:", rawTextResponseAccumulator);
+    throw new Error(errorMsg + `Raw text (if any): ${rawTextResponseAccumulator}`);
   }
+
+  // Validate parsed details (basic check)
+  if (typeof productTextDetails.title !== 'string' || 
+      typeof productTextDetails.description !== 'string' ||
+      (typeof productTextDetails.price !== 'string' && typeof productTextDetails.price !== 'number')) {
+    console.error("[geminiProductGeneration Function] Parsed product details are not in the expected format:", productTextDetails);
+    throw new Error("AI response for product details was not in the expected format (title, description, price).");
+  }
+  
+  productTextDetails.price = String(productTextDetails.price); // Ensure price is a string
+
+  console.log("[geminiProductGeneration Function] Successfully generated product details and image data.");
+  return { ...productTextDetails, imageData };
 }

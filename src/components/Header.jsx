@@ -1,15 +1,20 @@
 
-import React from 'react';
-import { motion } from 'framer-motion';
-import { Link, useNavigate } from 'react-router-dom';
-import { ShoppingBag, Sparkles, LogIn, LogOut, UserCircle } from 'lucide-react';
+import React, { useState } from 'react'; // Keep this one as it includes useState
+import { motion } from 'framer-motion'; // Keep one motion import
+import { Link, useNavigate } from 'react-router-dom'; // Keep one set of router imports
+import { ShoppingBag, Sparkles, LogIn, LogOut, UserCircle, CreditCard, Settings } from 'lucide-react'; // Added CreditCard, Settings
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabaseClient'; // Direct import for signOut
+import SubscribeButton from '@/components/SubscribeButton'; // Added SubscribeButton
 
 const Header = () => {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, session, subscriptionStatus, loadingProfile } = useAuth();
   const navigate = useNavigate();
+  const [isPortalLoading, setIsPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState(null);
+
+  const isSubscribed = subscriptionStatus === 'active';
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
@@ -17,6 +22,39 @@ const Header = () => {
       console.error('Error logging out:', error);
     } else {
       navigate('/auth'); // Redirect to auth page after logout
+    }
+  };
+
+  const handleManageBilling = async () => {
+    if (!session?.access_token) {
+      setPortalError('Authentication token not found. Please log in again.');
+      // Or redirect to login, or show a toast
+      return;
+    }
+    setIsPortalLoading(true);
+    setPortalError(null);
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-portal-session`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create portal session.');
+      }
+      window.location.href = data.url; // Redirect to Stripe Customer Portal
+    } catch (err) {
+      console.error('Portal session error:', err);
+      setPortalError(err.message);
+      // Optionally show a toast with err.message
+    } finally {
+      setIsPortalLoading(false);
     }
   };
 
@@ -35,16 +73,32 @@ const Header = () => {
       </Link>
       
       <div className="flex items-center gap-3">
-        <motion.div
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-1.5"
-        >
-          <Sparkles className="h-3.5 w-3.5" />
-          <span>AI-Powered</span>
-        </motion.div>
+        {/* "AI-Powered" button removed */}
+
+        {portalError && <p className="text-xs text-red-500">{portalError}</p> /* Display portal error if any */}
+
+        {isAuthenticated && !loadingProfile && (
+          isSubscribed ? (
+            <Button variant="outline" size="sm" onClick={handleManageBilling} disabled={isPortalLoading} className="rounded-full px-3 py-1.5 text-sm font-medium">
+              <Settings className="mr-2 h-4 w-4" /> {isPortalLoading ? 'Loading...' : 'Manage Billing'}
+            </Button>
+          ) : (
+            <SubscribeButton 
+              className="px-3 py-1.5 rounded-full text-sm font-medium" 
+              showIcon={true} 
+            />
+          )
+        )}
+
         {isAuthenticated ? (
           <>
+            {user?.user_metadata?.avatar_url && (
+              <img 
+                src={user.user_metadata.avatar_url} 
+                alt="User avatar" 
+                className="h-6 w-6 rounded-full" 
+              />
+            )}
             <span className="text-sm text-muted-foreground hidden sm:inline">
               {user?.email}
             </span>

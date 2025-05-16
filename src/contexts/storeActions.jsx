@@ -329,3 +329,58 @@ export const importShopifyStoreData = async (domain, token, shopifyStoreRaw, sho
         { generateId }
     );
 };
+
+// Placeholder for BigCommerce data mapping
+export const mapBigCommerceDataToInternalStore = (bcStoreSettings, bcProducts, domain, { generateId = utilGenerateId } = {}, generatedLogoDataUrl = null) => {
+  console.log("Mapping BigCommerce Data:", { bcStoreSettings, bcProducts, domain, generatedLogoDataUrl });
+
+  const mappedProducts = bcProducts.map(p => ({
+    id: p.entityId?.toString() || `bc-product-${generateId()}`, // Ensure ID is a string
+    name: p.name || "Unnamed Product",
+    description: p.description || `Product: ${p.name || "Unnamed Product"}`, // BC GraphQL might not provide full descriptions easily
+    price: parseFloat(p.prices?.price?.value || 0),
+    currencyCode: p.prices?.price?.currencyCode || 'USD',
+    image: {
+      id: `bc-img-${generateId()}`,
+      src: { medium: p.defaultImage?.url || `https://via.placeholder.com/400x400.png?text=${encodeURIComponent(p.name || "Product")}` },
+      alt: p.defaultImage?.altText || p.name || "Product Image",
+    },
+    sku: p.sku || '',
+    // Add other fields from BigCommerce product data if needed
+    rating: (Math.random() * 1.5 + 3.5).toFixed(1), 
+    stock: Math.floor(Math.random() * 100) + 10, 
+  }));
+
+  const logoUrl = generatedLogoDataUrl || bcStoreSettings.logo?.image?.url || `https://via.placeholder.com/100x100.png?text=${(bcStoreSettings.storeName || "S").substring(0,1)}`;
+  const aiContent = generateAIStoreContent('general', bcStoreSettings.storeName || "My BigCommerce Store");
+
+  return {
+    id: `store-bc-${(bcStoreSettings.storeHash || domain).replace(/[\.\/\:]/g, '-')}-${generateId()}`,
+    name: bcStoreSettings.storeName || "My BigCommerce Store",
+    type: 'bigcommerce-imported',
+    description: bcStoreSettings.description || `Store imported from ${domain}` || aiContent.heroDescription,
+    products: mappedProducts,
+    hero_image: { 
+        id: generateId(),
+        src: { large: bcStoreSettings.logo?.image?.url || `https://via.placeholder.com/1200x800.png?text=${encodeURIComponent(bcStoreSettings.storeName || "Store")}` }, 
+        alt: bcStoreSettings.logo?.image?.altText || bcStoreSettings.storeName || "Store Hero"
+    },
+    logo_url: logoUrl,
+    theme: {
+      primaryColor: getRandomColor(),
+      secondaryColor: getRandomColor(),
+      fontFamily: getRandomFont(),
+      layout: getRandomLayout(),
+    },
+    content: {
+        ...aiContent,
+        heroTitle: `Welcome to ${bcStoreSettings.storeName || "Our Store"}`,
+        heroDescription: bcStoreSettings.description || aiContent.heroDescription,
+    },
+    data_source: 'bigcommerce',
+    // bigcommerce_data: { // Optional: store raw data if needed
+    //   domain: domain,
+    //   raw_settings: bcStoreSettings,
+    // }
+  };
+};
